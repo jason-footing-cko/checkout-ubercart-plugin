@@ -1,0 +1,342 @@
+<?php
+
+include('includes/autoload.php');
+
+/*
+ * Implementation of hook_uc_payment_method()
+ */
+function uc_checkoutapipayment_uc_payment_method()
+{
+    $methods[] = array(
+        'id'        =>  'checkoutapipayment_credit',
+        'name'      =>  t('Checkout js'),
+        'title'     =>  t('Checkout js'),
+        'desc'      =>  t('Pay through my payment gateway'),
+        'callback'  =>  'uc_payment_method_checkoutapipayment',
+        'redirect'  =>  'checkoutapi_payment_review_form',
+        'weight'    =>  1,
+        'checkout'  =>  TRUE
+    );
+
+    return $methods;
+}
+
+/**
+ * Implementation of hook_uc_payment_gateway().
+ */
+function uc_checkoutapipayment_uc_payment_gateway()
+{
+    $gateways['checkoutapi_gateway_js'] = array(
+        'id'                        => 'checkoutapipayment_js',
+        'title'                     => t('Checkout.com'),
+        'description'               => t('Process credit card payments using Checkout gateway 3.0.'),
+        'checkoutapipayment_credit' => 'uc_checkoutapipayment_process_order',
+    );
+
+    $gateways['checkoutapi_gateway'] = array(
+        'id'               => 'checkoutapipayment',
+        'title'            => t('Checkout.com'),
+        'description'      => t('Process credit card payments using Checkout gateway 3.0.'),
+        'credit'           => 'uc_checkoutapipayment_process_order',
+        'settings'         => 'uc_checkoutapi_settings_form',
+        'credit_txn_types' => array(UC_CREDIT_AUTH_ONLY, UC_CREDIT_AUTH_CAPTURE),
+    );
+
+    return $gateways;
+}
+
+function uc_checkoutapipayment_process_order($order_id, $amount, $data)
+{
+
+    $order = uc_order_load($order_id);
+    $instance = getInstance($order->payment_method);
+    
+    return $instance->submitFormCharge($order, $amount, $data);
+
+}
+
+function getInstance($type)
+{
+    switch ($type) {
+        case 'credit':
+            $_instance = CheckoutApi_Lib_Factory::getInstance('methods_creditcardpci');
+            break;
+        default :
+            $_instance = CheckoutApi_Lib_Factory::getInstance('methods_creditcard');
+            break;
+    }
+
+    return $_instance;
+
+}
+
+/*
+ * Implements hook_form_alter
+ */
+function uc_checkoutapipayment_form_alter(&$form, &$form_state, $form_id)
+{
+    if($form_id == 'checkoutapi_payment_review_form') {
+        $form['#submit'][] = 'uc_checkoutapi_payment_form_submit';
+    }
+}
+
+function uc_checkoutapi_payment_form_submit($form, &$form_state)
+{
+    $order_id = $form_state['values']['order_id'];
+    $order = uc_order_load($order_id);
+
+    $amount = $form_state['values']['order_total'];
+    $data['txn_type'] = variable_get('payment_action', '');
+    $result = getInstance($order->payment_method)->submitFormCharge($order, $amount, $data);
+    if ($result['success'] == TRUE) {
+        $status = 'processing';
+        
+        if (uc_order_update_status($order->order_id, $status)) {
+            $order->order_status = $status;
+        }
+        
+        unset($_SESSION['uc_checkout'][$order->order_id]['do_review']);
+        $_SESSION['uc_checkout'][$_SESSION['cart_order']]['do_complete'] = TRUE;
+        $form_state['redirect'] = 'cart/checkout/complete';
+
+    }   else {
+        drupal_set_message($result['message'],'error');
+    }
+}
+
+function uc_checkoutapi_settings_form () 
+{
+    $form['private_key'] = array(
+        '#type'             =>  'textfield',
+        '#title'            =>  t('Private Key'),
+        '#description'      =>  t('The Checkout.com account secret API key to use .'),
+        '#default_value'    =>  variable_get('private_key', ''),
+
+    );
+
+    $form['public_key'] = array(
+        '#type'             =>  'textfield',
+        '#title'            =>  t('Publishable API Key'),
+        '#description'      =>  t('The Checkout.com account publishable API key to use.'),
+        '#default_value'    =>  variable_get('public_key')
+
+    );
+
+    $form['mode'] = array(
+        '#type'             =>  'select',
+        '#title'            =>  t('Transaction Server'),
+        '#description'      =>  t('Perform transactions on the production server or on the testing server.'),
+        '#default_value'    =>  variable_get('mode', 'test'),
+        '#options'          =>  array(
+            'live'          =>  'Live -use for processing real transactions ',
+            'preprod'       =>  'Pre production - use to test before setting live',
+            'test'          =>  'Test - sandbox for testing. Require a test account')
+    );
+
+    $form['localpayment'] = array(
+        '#type'             =>  'select',
+        '#title'            =>  t('Enable LocalPayment'),
+        '#options'          =>  array(
+            'true'          =>  t('Yes'),
+            'false'         =>  t('No'),
+        ),
+        '#default_value'    =>  variable_get('localpayment', 'false'),
+    );
+
+    $form['autocaptime'] = array(
+        '#type'             =>  'textfield',
+        '#title'            =>  t('Set Gateway auto capture tume.'),
+        '#description'      =>  t('Set how long will the payment be capture.'),
+        '#default_value'    =>  variable_get('autocaptime', 0),
+    );
+
+    $form['timeout'] = array(
+        '#type'             =>  'textfield',
+        '#title'            =>  t('Set Gateway timeout.'),
+        '#description'      =>  t('Set how long request timeout on server.'),
+        '#default_value'    =>  variable_get('timeout', 60),
+    );
+    $form['checkout_submit_label'] = array(
+        '#type'             =>  'textfield',
+        '#title'            =>  t('Checkout button label'),
+        '#description'      =>  t('Customize the label of the final checkout button when the customer is about to pay.'),
+        '#default_value'    =>  variable_get('checkout_submit_label', t('Submit')),
+    );
+
+    return $form;
+}
+
+function uc_payment_method_checkoutapipayment($op, &$order, $form = NULL, &$form_state = NULL)
+{
+    switch ($op) {
+        case 'cart-details':
+            
+            $script = uc_checkoutapipayment_attached_js($order);
+            $build = array();
+
+            $build['pay_method_markup'] = array(
+                '#markup'   => t('Choose your credit card to process your payment'),
+            );
+            
+            $build['pay_method_container'] = array(
+                '#type'         => 'container',
+                '#attributes'   => array(
+                    'class'     => array('widget-container')
+                ),
+
+            );
+
+            $build['ckoWidgetScript']['#attached']['js'] = $script['renderWidget'];
+            $build['ckoWidgetSetting']['#attached']['js'][] = $script['widgetSetting'];
+          
+         return $build;         
+
+        case 'settings':
+
+            $form['payment_action'] = array(
+                '#type'                     =>  'radios',
+                '#title'                    =>  t('Transaction Method'),
+                '#description'              =>  t('The processing method to use for each transaction.'),
+                '#default_value'            =>  variable_get('payment_action', UC_CREDIT_AUTH_CAPTURE),
+                '#options' => array(
+                    UC_CREDIT_AUTH_ONLY     =>  t('Authorization only (requires manual or automated capture after checkout)'),
+                    UC_CREDIT_AUTH_CAPTURE  =>  t('Authorization and capture'),
+
+                )
+            );
+            
+            $form = array_merge($form ,uc_checkoutapi_settings_form());
+
+            return $form;
+    }
+}
+
+function checkoutapi_payment_review_form($form, &$form_state, $order)
+{
+
+    //Information about the order
+    $order_id = $order->order_id;
+    $order_total = number_format($order->order_total, 2, '.', '');
+    $script = uc_checkoutapipayment_attached_js($order);
+
+    $data = array(
+        'order_id'      => $order_id,
+        'order_total'   => $order_total,
+        'paymentToken'  => $script['paymentToken']
+    );
+    
+    // This code goes behind the final checkout button of the checkout pane
+    foreach ($data as $name => $value) {
+        if (!empty($value)) {
+            $form[$name] = array('#type' => 'hidden', '#value' => $value);
+        }
+    }
+    $form['actions'] = array('#type' => 'actions');
+    $form['actions']['submit'] = array(
+        '#type'     => 'submit',
+        '#value'    => variable_get('checkout_submit_label'),
+
+    );
+    
+    $form['ckoWidgetSetting']['#attached']['js'][] = $script['widgetSetting'];
+    $form['#attached']['js'] = $script['renderWidget'];
+
+    return $form;
+}
+
+/*
+ * Implementation of hook_menu()
+ */
+
+function uc_checkoutapipayment_menu () 
+{
+        $items['checkoutapi/callback'] = array(
+        'title'           => 'Ipn checkout',
+        'page callback'   => 'checkoutapipayment_callback',
+        'access callback' => TRUE,
+        'type'            => MENU_CALLBACK,
+    );
+    
+    return $items;
+}
+
+/*
+ * Webhook
+ */
+
+function checkoutapipayment_callback()
+{
+    $post_data = file_get_contents('php://input');
+
+    if ($post_data) {
+        $mode = variable_get('mode');
+        $Api = CheckoutApi_Api::getApi(array('mode' => $mode));
+        $objectCharge = $Api->chargeToObj($post_data);
+
+        if ($objectCharge->isValid()) {
+
+            /*
+             * Need to get track id
+             */
+            $order_id = $objectCharge->getTrackId();
+            if ($order_id) {
+                $order = uc_order_load($order_id);
+                if ($objectCharge->getCaptured()) {
+
+                    if (uc_order_status_data($order->order_status, 'state') != 'completed') {
+                        uc_order_update_status($order->order_id, uc_order_state_default('completed'));
+                        uc_order_comment_save($order_id, 0, t('Your transaction has been successfully captured'));
+                        
+                    }
+
+                }   elseif ($objectCharge->getRefunded()) {
+
+                    uc_order_update_status($order->order_id, uc_order_state_default('canceled'));
+                    uc_order_comment_save($order_id, 0, t('Your payment has been refunded'));
+
+                }   elseif(!$objectCharge->getAuthorised()) {
+
+                    uc_order_update_status($order->order_id, uc_order_state_default('abandoned'));
+                    uc_order_comment_save($order_id, 0, t('Your payment has been canceled'));
+                } 
+            }
+        }
+    }
+}
+
+function uc_checkoutapipayment_attached_js ($order) 
+{
+    $js_settings = getInstance($order->payment_method)->getExtraInit($order);
+
+    $data = array();
+    $data['widgetSetting'] = array(
+        'data' => array('uc_checkoutapipayment' => $js_settings),
+        'type' => 'setting',
+    );
+
+    $data['renderWidget'] = array(
+        drupal_get_path('module', 'uc_checkoutapipayment') . '/includes/js/checkoutapirenderWidget.js' => array(
+        'type' => 'file',
+        ),
+    );
+    
+    $data['paymentToken'] = $js_settings['paymentToken'];
+
+    return $data;
+}
+
+/**
+ * Implementation of hook_uc_order()
+ */
+function uc_checkoutapipayment_uc_order ($op, $order, $arg2)
+{
+    $gateway_id = uc_credit_default_gateway();
+
+    if ($op == 'update' && $order->order_status == 'payment_received' && $arg2 == 'completed'){
+        if(isset($order->payment_method) && $order->payment_method == 'credit'){
+            if(isset($gateway_id) && $gateway_id == 'checkoutapi_gateway'){
+                uc_order_update_status($order->order_id, 'processing');
+            }
+        }
+    }
+}
