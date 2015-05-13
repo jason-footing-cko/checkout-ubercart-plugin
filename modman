@@ -1,2 +1,2 @@
 #Modman file for mapping checkoutapi 
-checkoutapipayment sites/all/modules/ubercart/payment/checkoutapipayment
+uc_checkoutapipayment sites/all/modules/ubercart/payment/checkoutapipayment
