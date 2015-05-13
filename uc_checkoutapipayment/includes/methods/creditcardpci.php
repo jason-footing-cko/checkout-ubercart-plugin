@@ -12,7 +12,6 @@ class methods_creditcardpci extends methods_Abstract
             $config['postedParam']['card']['expiryYear'] = $order->payment_details['cc_exp_year'];
             $config['postedParam']['card']['cvv'] = $order->payment_details['cc_cvv'];
         }
-
         return $this->_placeorder($config,$order);
     }
 

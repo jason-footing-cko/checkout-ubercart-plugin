@@ -11,9 +11,16 @@ abstract class methods_Abstract
         $amountCents = $this->formatAmountToCents($amount);
         $config['authorization'] = variable_get('private_key');
         $config['mode'] = variable_get('mode');
-        $currency_code = strtolower($order->currency);
-       
-        
+        $currency_code = strtolower($order->currency);   
+        $billing_country = uc_get_country_data(array('country_id' => $order->billing_country));
+        $delivery_country = uc_get_country_data(array('country_id' => $order->delivery_country));
+
+        if ($data['txn_type'] == 'auth_capture') {
+            $config = array_merge_recursive($this->_captureConfig(), $config);
+        }
+        else {
+            $config = array_merge_recursive($this->_authorizeConfig(), $config);
+        }
         foreach ($order->products as $product) {
 
             // Add the line item to the return array.
@@ -26,43 +33,55 @@ abstract class methods_Abstract
             
         }
 
-        // Add the shipping address parameters to the request.
-        $shipping_array = array(
-            'addressLine1'    => $order->delivery_street1,
-            'addressLine2'    => $order->delivery_street2,
-            'addressPostcode' => $order->delivery_postal_code,
-            'addressCountry'  => $order->delivery_country,
-            'addressCity'     => $order->delivery_city,
-            'recipientName'   => $order->delivery_first_name . ' ' . $order->delivery_last_name,
-            'phone'           => array('number' => $order->delivery_phone)
+        if (uc_order_is_shippable($order) && !empty($order->delivery_first_name)) {
+            // Add the shipping address parameters to the request.
+          $del_phone_length = strlen($order->delivery_phone);
+          
+          
+            $shipping_array = array(
+                'addressLine1'    => $order->delivery_street1,
+                'addressLine2'    => $order->delivery_street2,
+                'postcode'        => $order->delivery_postal_code,
+                'country'         => $delivery_country[0]['country_iso_code_2'],
+                'city'            => $order->delivery_city,  
+            );
+            if ($del_phone_length > 7){
+              $del_phone_array = array(
+                  'phone'  => array('number' => $order->delivery_phone)
+              );
+              $shipping_array = array_merge_recursive($shipping_array, $del_phone_array);  
+            }        
+        }
+        
+        $bil_phone_length = strlen($order->billing_phone);
+        $billingDetailsConfig = array(
+            'addressLine1'    => $order->billing_street1,
+            'addressLine2'    => $order->billing_street2,
+            'postcode'        => $order->billing_postal_code,
+            'country'         => $billing_country[0]['country_iso_code_2'],
+            'city'            => $order->billing_city,
         );
-
-        $config['postedParam'] = array(
+        
+        if ($bil_phone_length > 7){
+              $bil_phone_array = array(
+                  'phone'  => array('number' => $order->billing_phone)
+              );
+              $billingDetailsConfig = array_merge_recursive($billingDetailsConfig, $bil_phone_array);  
+        }        
+            
+        $config['postedParam'] = array_merge_recursive($config['postedParam'],array(
             'email'           => $order->primary_email,
             'value'           => $amountCents,
             'trackId'         => $order->order_id,
             'currency'        => $currency_code,
-            'shippingDetails' => $shipping_array,
+            'shippingDetails' => !empty($shipping_array) ? $shipping_array : $billingDetailsConfig,
             'products'        => $products,
             'card'            => array(
                 'name'           => $order->billing_first_name . ' ' . $order->billing_last_name,
-                'billingDetails' => array(
-                    'addressLine1'    => $order->billing_street1,
-                    'addressLine2'    => $order->billing_street2,
-                    'addressPostcode' => $order->billing_postal_code,
-                    'addressCountry'  => $order->billing_country,
-                    'addressCity'     => $order->billing_city,
-                    'phone'           => array('number' => $order->billing_phone)
-                )
+                'billingDetails' => $billingDetailsConfig
             )
-        );
-
-        if ($data['txn_type'] == 'auth_capture') {
-            $config = array_merge($this->_captureConfig(), $config);
-        }
-        else {
-            $config = array_merge($this->_authorizeConfig(), $config);
-        }
+        ));
+        
         return $config;
     }
 
@@ -71,7 +90,7 @@ abstract class methods_Abstract
         global $user;
         //building charge
         $respondCharge = $this->_createCharge($config);
-        
+
         $responsemessage = '';
 
         if ($respondCharge->isValid()) {

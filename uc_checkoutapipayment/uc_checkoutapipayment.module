@@ -126,11 +126,10 @@ function uc_checkoutapi_settings_form ()
         '#type'             =>  'select',
         '#title'            =>  t('Transaction Server'),
         '#description'      =>  t('Perform transactions on the production server or on the testing server.'),
-        '#default_value'    =>  variable_get('mode', 'test'),
+        '#default_value'    =>  variable_get('mode', ''),
         '#options'          =>  array(
-            'live'          =>  'Live -use for processing real transactions ',
-            'preprod'       =>  'Pre production - use to test before setting live',
-            'test'          =>  'Test - sandbox for testing. Require a test account')
+            'live'          =>  'Live - use for processing real transactions ',
+            'sandbox'       =>  'Test - sandbox for testing. Require a test account')
     );
 
     $form['localpayment'] = array(
@@ -174,9 +173,9 @@ function uc_payment_method_checkoutapipayment($op, &$order, $form = NULL, &$form
             $script = uc_checkoutapipayment_attached_js($order);
             $build = array();
 
-            $build['pay_method_markup'] = array(
-                '#markup'   => t('Choose your credit card to process your payment'),
-            );
+//            $build['pay_method_markup'] = array(
+//                '#markup'   => t('Choose your credit card to process your payment'),
+//            );
             
             $build['pay_method_container'] = array(
                 '#type'         => 'container',
