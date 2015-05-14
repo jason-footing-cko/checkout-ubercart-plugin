@@ -39,7 +39,6 @@
                 value: Drupal.settings.uc_checkoutapipayment.amount,
                 currency: Drupal.settings.uc_checkoutapipayment.currency,
                 paymentToken: Drupal.settings.uc_checkoutapipayment.paymentToken,
-                paymentMode: 'card',
                 widgetContainerSelector: '.widget-container',
                 cardCharged: function (event) {
                     $('#checkoutapi-payment-review-form').trigger('submit');

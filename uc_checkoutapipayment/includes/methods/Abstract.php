@@ -45,7 +45,7 @@ abstract class methods_Abstract
                 'country'         => $delivery_country[0]['country_iso_code_2'],
                 'city'            => $order->delivery_city,  
             );
-            if ($del_phone_length > 7){
+            if ($del_phone_length > 6){
               $del_phone_array = array(
                   'phone'  => array('number' => $order->delivery_phone)
               );
@@ -62,7 +62,7 @@ abstract class methods_Abstract
             'city'            => $order->billing_city,
         );
         
-        if ($bil_phone_length > 7){
+        if ($bil_phone_length > 6){
               $bil_phone_array = array(
                   'phone'  => array('number' => $order->billing_phone)
               );
