@@ -1,9 +1,6 @@
 (function ($) {
     $(function () {
-        var head = document.getElementsByTagName("head")[0],
-                scriptJs = document.getElementById('checkoutApijs');
-
-        if (!scriptJs) {
+        var head = document.getElementsByTagName("head")[0];
             scriptJs = document.createElement('script');
 
             if(Drupal.settings.uc_checkoutapipayment.mode == 'live') {
@@ -12,17 +9,9 @@
             else {
               scriptJs.src= "//sandbox.checkout.com/js/v1/checkout.js";
             }
-            scriptJs.id = 'checkoutApijs';
             scriptJs.type = 'text/javascript';
-            var interVal = setInterval(function () {
-                if (CheckoutIntegration) {
-                    $('head').append($('.widget-container link'));
-                    clearInterval(interVal);
-                }
-
-            }, 1000);
+            scriptJs.async = true;
             head.appendChild(scriptJs);
-        }
     });
 
     Drupal.behaviors.uc_checkoutapipayment = {
@@ -40,6 +29,7 @@
                 currency: Drupal.settings.uc_checkoutapipayment.currency,
                 paymentToken: Drupal.settings.uc_checkoutapipayment.paymentToken,
                 widgetContainerSelector: '.widget-container',
+                forceMobileRedirect: true,
                 cardCharged: function (event) {
                     $('#checkoutapi-payment-review-form').trigger('submit');
                 },
@@ -51,8 +41,14 @@
                     $('#checkoutapi-payment-review-form input.form-submit').click(function (event) {
                         event.preventDefault();
                         if (CheckoutIntegration) {
-                            CheckoutIntegration.open();
-                            $(this).attr("disabled", 'disabled');
+                            if(!CheckoutIntegration.isMobile()){
+                                CheckoutIntegration.open();
+                                $(this).attr("disabled", 'disabled');
+                            }
+                            else {
+                                $('#redirectUrl').val(CheckoutIntegration.getRedirectionUrl());
+                                $('#checkoutapi-payment-review-form').trigger('submit');
+                            }
                         }
                     });
                 },
@@ -67,9 +63,7 @@
                 }, 
             }
 
-            $('#edit-panes-payment-payment-method-checkoutapipayment-credit').unbind('click.CheckoutApi');
-            $('#edit-panes-payment-payment-method-checkoutapipayment-credit').bind('click.CheckoutApi', function () {
-
+            $('#edit-panes-payment-payment-method-checkoutapipayment-credit').once('checkoutapi').change(function(){
                 var interVal2 = setInterval(function () {
                     if ($('.widget-container').length) {
                         CheckoutIntegration.render(window.CKOConfig);

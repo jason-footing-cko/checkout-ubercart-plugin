@@ -8,7 +8,13 @@ class methods_creditcard extends methods_Abstract
 
         $config = parent::submitFormCharge($order, $amount, $data); 
         $config['postedParam']['paymentToken'] = $_POST['paymentToken'];
-        return $this->_placeorder($config, $order);
+        if(!empty($_POST['redirectUrl'])){
+          drupal_goto($_POST['redirectUrl'] . '&trackId=' . $order->order_id);
+        }
+        else {
+          return $this->_placeorder($config, $order);
+        }
+        
     }
 
     public function getExtraInit($order = null)

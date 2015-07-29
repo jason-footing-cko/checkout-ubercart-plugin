@@ -10,7 +10,7 @@ function uc_checkoutapipayment_uc_payment_method()
     $methods[] = array(
         'id'        =>  'checkoutapipayment_credit',
         'name'      =>  t('Checkout js'),
-        'title'     =>  t('Checkout js'),
+        'title'     =>  t('Checkout.com'),
         'desc'      =>  t('Pay through my payment gateway'),
         'callback'  =>  'uc_payment_method_checkoutapipayment',
         'redirect'  =>  'checkoutapi_payment_review_form',
@@ -88,8 +88,13 @@ function uc_checkoutapi_payment_form_submit($form, &$form_state)
     $amount = $form_state['values']['order_total'];
     $data['txn_type'] = variable_get('payment_action', '');
     $result = getInstance($order->payment_method)->submitFormCharge($order, $amount, $data);
+    
     if ($result['success'] == TRUE) {
         $status = 'processing';
+        $comment = $result['comment'];
+        
+        uc_payment_enter($order_id, 'checkoutapipayment_credit', $order->order_total, $order->uid, NULL, $comment);
+        uc_cart_complete_sale($order);
         
         if (uc_order_update_status($order->order_id, $status)) {
             $order->order_status = $status;
@@ -221,14 +226,14 @@ function checkoutapi_payment_review_form($form, &$form_state, $order)
     $data = array(
         'order_id'      => $order_id,
         'order_total'   => $order_total,
-        'paymentToken'  => $script['paymentToken']
+        'paymentToken'  => $script['paymentToken'],
+        'redirectUrl'   => '',
     );
     
     // This code goes behind the final checkout button of the checkout pane
     foreach ($data as $name => $value) {
-        if (!empty($value)) {
-            $form[$name] = array('#type' => 'hidden', '#value' => $value);
-        }
+        $form[$name] = array('#type' => 'hidden', '#value' => $value,'#attributes' => array('id' => $name));
+
     }
     $form['actions'] = array('#type' => 'actions');
     $form['actions']['submit'] = array(
@@ -239,7 +244,6 @@ function checkoutapi_payment_review_form($form, &$form_state, $order)
     
     $form['ckoWidgetSetting']['#attached']['js'][] = $script['widgetSetting'];
     $form['#attached']['js'] = $script['renderWidget'];
-
     return $form;
 }
 
@@ -255,6 +259,12 @@ function uc_checkoutapipayment_menu ()
         'access callback' => TRUE,
         'type'            => MENU_CALLBACK,
     );
+        $items['checkoutapi/success'] = array(
+        'title' => 'Success page',
+        'page callback' => 'checkoutapipayment_success_order',
+        'access callback' => TRUE,
+        'type' => MENU_CALLBACK,
+      );
     
     return $items;
 }
@@ -296,11 +306,51 @@ function checkoutapipayment_callback()
                 }   elseif(!$objectCharge->getAuthorised()) {
 
                     uc_order_update_status($order->order_id, uc_order_state_default('abandoned'));
-                    uc_order_comment_save($order_id, 0, t('Your payment has been canceled'));
+                    uc_order_comment_save($order_id, 0, t('Your payment has been '. $objectCharge->getStatus()));
                 } 
             }
         }
     }
+}
+
+/*
+ * Mobile Redirect to success page
+ * Success url : example.com/checkoutapi/success
+ */
+function checkoutapipayment_success_order() {
+  global $user;
+
+  if(!isset($_POST['cko-payment-token'])){
+    drupal_goto();
+  }
+  
+  $config['authorization'] = variable_get('private_key');
+  $config['paymentToken'] = $_POST['cko-payment-token'];
+
+  $api = CheckoutApi_Api::getApi(array('mode' => variable_get('mode')));
+  $object_charge = $api->verifyChargePaymentToken($config);
+
+  $order_id = $object_charge->getTrackId();
+  $order = uc_order_load($order_id);
+
+  if (preg_match('/^1[0-9]+$/', $object_charge->getResponseCode())) {
+    
+    $comment = t('Gateway Message: @msg', array('@msg' => $object_charge->getResponseMessage() . ' with chargeId ' . $object_charge->getId()));
+    uc_payment_enter($order_id, 'checkoutapipayment_credit', $order->order_total, $order->uid, NULL, 'Payment has been ' . $object_charge->getStatus() . ' by Checkout.com');
+    uc_cart_complete_sale($order);
+    uc_order_comment_save($order_id, $user->uid, $comment);
+    uc_order_update_status($order->order_id, 'processing');
+    
+    // This lets us know it's a legitimate access of the complete page.
+    $_SESSION['uc_checkout'][$_SESSION['cart_order']]['do_complete'] = TRUE;
+    drupal_goto('cart/checkout/complete');
+
+  }
+  else {
+     uc_order_update_status($order_id, 'pending');
+     uc_order_comment_save($order_id,$user->uid, t('Payment is pending at Checkout.com: @reason', array('@reason' => $object_charge->getResponseMessage())), 'admin');
+     drupal_goto('cart');
+  } 
 }
 
 function uc_checkoutapipayment_attached_js ($order) 

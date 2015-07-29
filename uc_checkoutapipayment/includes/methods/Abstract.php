@@ -99,8 +99,8 @@ abstract class methods_Abstract
                 
                 $result = array(
                     'success' => TRUE,
-                    'comment' => $responsemessage,
-                    'message' => $responsemessage,
+                    'comment' => 'Payment has been ' . $respondCharge->getStatus() . ' by Checkout.com',
+                    'message' => $respondCharge->getResponseMessage(),
                     'uid'     => $user->uid,
                 );
                 
