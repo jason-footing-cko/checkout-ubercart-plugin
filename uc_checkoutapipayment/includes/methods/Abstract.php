@@ -92,14 +92,26 @@ abstract class methods_Abstract
         $respondCharge = $this->_createCharge($config);
 
         $responsemessage = '';
-
+        $toValidate = array(
+            'currency' => $order->currency,
+            'value' => $order->amount,
+            'trackId' => $order->order_id,
+            );
+        $Api = CheckoutApi_Api::getApi(array('mode' => variable_get('mode')));
+        $validateRequest = $Api::validateRequest($toValidate,$respondCharge);
+        
         if ($respondCharge->isValid()) {
             $responsemessage = $respondCharge->getResponseMessage();
             if (preg_match('/^1[0-9]+$/', $respondCharge->getResponseCode())) {
-                
+                $comment = 'Payment has been ' . $respondCharge->getStatus() . ' by Checkout.com';
+                if(!$validateRequest['status']){
+                  foreach($validateRequest['message'] as $errormessage){
+                    $comment .= $errormessage . '. ';
+                  }
+                }
                 $result = array(
                     'success' => TRUE,
-                    'comment' => 'Payment has been ' . $respondCharge->getStatus() . ' by Checkout.com',
+                    'comment' => $comment,
                     'message' => $respondCharge->getResponseMessage(),
                     'uid'     => $user->uid,
                 );

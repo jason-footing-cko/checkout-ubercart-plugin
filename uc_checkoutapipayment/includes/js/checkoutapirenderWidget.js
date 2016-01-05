@@ -4,10 +4,10 @@
             scriptJs = document.createElement('script');
 
             if(Drupal.settings.uc_checkoutapipayment.mode == 'live') {
-              scriptJs.src= "https://www.checkout.com/cdn/js/checkout.js";
+              scriptJs.src= "https://cdn.checkout.com/js/checkout.js";
             }
             else {
-              scriptJs.src= "//sandbox.checkout.com/js/v1/checkout.js";
+              scriptJs.src= "https://sandbox.checkout.com/js/v1/checkout.js";
             }
             scriptJs.type = 'text/javascript';
             scriptJs.async = true;
@@ -30,6 +30,12 @@
                 paymentToken: Drupal.settings.uc_checkoutapipayment.paymentToken,
                 widgetContainerSelector: '.widget-container',
                 forceMobileRedirect: true,
+                styling: {
+                    themeColor: '',
+                    buttonColor: '',
+                    logoUrl: '',
+                    iconColor: '',
+                },
                 cardCharged: function (event) {
                     $('#checkoutapi-payment-review-form').trigger('submit');
                 },

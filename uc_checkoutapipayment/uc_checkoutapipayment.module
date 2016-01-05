@@ -332,10 +332,23 @@ function checkoutapipayment_success_order() {
 
   $order_id = $object_charge->getTrackId();
   $order = uc_order_load($order_id);
+  
+  $toValidate = array(
+    'currency' => $order->currency,
+    'value' => $order->amount,
+    'trackId' => $order->order_id,
+  );
 
+  $validateRequest = $api::validateRequest($toValidate,$object_charge);
+  
   if (preg_match('/^1[0-9]+$/', $object_charge->getResponseCode())) {
-    
-    $comment = t('Gateway Message: @msg', array('@msg' => $object_charge->getResponseMessage() . ' with chargeId ' . $object_charge->getId()));
+     $comment = t('Gateway Message: @msg', array('@msg' => $object_charge->getResponseMessage() . ' with chargeId ' . $object_charge->getId()));
+     if(!$validateRequest['status']){
+      foreach($validateRequest['message'] as $errormessage){
+        $comment .= $errormessage . '. ';
+      }
+    }
+
     uc_payment_enter($order_id, 'checkoutapipayment_credit', $order->order_total, $order->uid, NULL, 'Payment has been ' . $object_charge->getStatus() . ' by Checkout.com');
     uc_cart_complete_sale($order);
     uc_order_comment_save($order_id, $user->uid, $comment);
